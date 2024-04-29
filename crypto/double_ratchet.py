@@ -1,4 +1,4 @@
-# file: double_ratchet.py
+""" # file: double_ratchet.py
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import x25519
@@ -78,3 +78,38 @@ class DoubleRatchet:
         f = Fernet(key_fernet)
         decrypted_message = f.decrypt(encrypted_message)
         return decrypted_message.decode()
+ """
+
+import base64
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from cryptography.hazmat.primitives import hashes
+from cryptography.fernet import Fernet
+from cryptography.hazmat.backends import default_backend
+
+class DoubleRatchet:
+    def __init__(self, private_key_base64, public_key_base64):
+        self.private_key = base64.b64decode(private_key_base64)
+        self.public_key = base64.b64decode(public_key_base64)
+        self.chain_key = None
+        self.next_chain_key = None
+
+    def initialize(self):
+        # Example initialization logic
+        self.chain_key = HKDF(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=None,
+            info=b'chain_key',
+            backend=default_backend()
+        ).derive(self.public_key + self.private_key)  # simplistic example
+
+    def encrypt(self, plaintext):
+        key_fernet = base64.urlsafe_b64encode(self.chain_key)
+        f = Fernet(key_fernet)
+        return f.encrypt(plaintext.encode()).decode()
+
+    def decrypt(self, encrypted_message):
+        key_fernet = base64.urlsafe_b64encode(self.chain_key)
+        f = Fernet(key_fernet)
+        return f.decrypt(encrypted_message.encode()).decode()
+

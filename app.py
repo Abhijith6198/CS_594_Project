@@ -1,119 +1,141 @@
-""" from flask import Flask, request, jsonify
-from crypto.double_ratchet import DoubleRatchet
+from flask import Flask, render_template, request, jsonify
+from flask_sqlalchemy import SQLAlchemy
+# from double_ratchet import DoubleRatchet
+# from crypto.double_ratchet import DoubleRatchet
+import base64
+import sys
 from cryptography.hazmat.primitives.asymmetric import x25519
 from cryptography.hazmat.primitives import serialization
-import os
+from datetime import datetime
+sys.path.append(r'C:/Users/snethi4/Desktop/CS_594_Project/mySecureApp/crypto')
 import sys
 print(sys.path)
+sys.path.append('C:/Users/snethi4/Desktop/CS_594_Project/mySecureApp/crypto')  # Adjust path as necessary
 
 
 app = Flask(__name__)
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///mySecureApp.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db = SQLAlchemy(app)
 
-# Example in-memory storage for simplicity
-USERS = {}
-SESSIONS = {}
+class Message(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    sender_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    recipient_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    content = db.Column(db.Text, nullable=False)  # Stores encrypted messages
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
 
-@app.route('/register', methods=['POST'])
-def register():
-    user_id = request.json['user_id']
-    if user_id in USERS:
-        return jsonify({'error': 'User already exists'}), 409
-    # Generate keys here (omitted for brevity, see X3DH implementation)
-    def generate_key_pair():
-    # Generate a private key for use in the exchange.
-        private_key = x25519.X25519PrivateKey.generate()
-        return private_key, private_key.public_key()
+    def __repr__(self):
+        return f'<Message from {self.sender_id} to {self.recipient_id}>'
 
-    USERS[user_id] = {
-        'identity_key': 'identity_public_key',
-        'signed_prekey': 'signed_prekey_public',
-        'one_time_prekey': 'one_time_prekey_public'
-    }
-    return jsonify({'message': 'User registered', 'user_id': user_id}), 201
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    public_key = db.Column(db.String(), unique=True, nullable=False)
+    private_key = db.Column(db.String(), nullable=False)
 
-@app.route('/start_conversation', methods=['POST'])
-def start_conversation():
-    from_user = request.json['from_user']
-    to_user = request.json['to_user']
-    if to_user not in USERS:
-        return jsonify({'error': 'Recipient not found'}), 404
-    # Example shared secret initialization
-    shared_secret = os.urandom(32)  # This should be derived from X3DH in practice
-    session_id = f'{from_user}_{to_user}'
-    SESSIONS[session_id] = DoubleRatchet(None, None)
-    SESSIONS[session_id].initialize(shared_secret)
-    return jsonify({'message': 'Conversation started', 'session_id': session_id}), 200
+    def __repr__(self):
+        return f'<User {self.username}>'
 
-@app.route('/send_message', methods=['POST'])
-def send_message():
-    session_id = request.json['session_id']
-    message = request.json['message']
-    if session_id not in SESSIONS:
-        return jsonify({'error': 'Session not found'}), 404
-    encrypted_message = SESSIONS[session_id].encrypt(message)
-    return jsonify({'encrypted_message': encrypted_message}), 200
+with app.app_context():
+    db.create_all()
 
-@app.route('/receive_message', methods=['POST'])
-def receive_message():
-    session_id = request.json['session_id']
-    encrypted_message = request.json['encrypted_message']
-    if session_id not in SESSIONS:
-        return jsonify({'error': 'Session not found'}), 404
-    decrypted_message = SESSIONS[session_id].decrypt(encrypted_message)
-    return jsonify({'decrypted_message': decrypted_message}), 200
-
-if __name__ == '__main__':
-    app.run(debug=True)
- """
-
-from flask import Flask, render_template, request, redirect, url_for
-# Assuming you have a DoubleRatchet class implemented in the crypto folder
-import os
-from flask import Flask, request, jsonify
-from crypto.double_ratchet import DoubleRatchet
-from cryptography.hazmat.primitives.asymmetric import x25519
-from cryptography.hazmat.primitives import serialization
-import os
-import sys
-print(sys.path)
-
-app = Flask(__name__)
-
-# Dummy in-memory storage for demonstration purposes
-users = {}
-sessions = {}
+    
 
 @app.route('/')
 def home():
     return render_template('index.html')
 
+""" @app.route('/register', methods=['POST'])
+def register():
+    username = request.json['username']
+    existing_user = User.query.filter_by(username=username).first()
+    if existing_user:
+        return jsonify({'error': 'Username already taken'}), 409
+
+    # Generate user keys
+    private_key, public_key = generate_key_pair()
+    user = User(username=username, public_key=public_key, private_key=private_key)
+    db.session.add(user)
+    db.session.commit()
+
+    return jsonify({'message': 'User registered successfully', 'username': username}), 201 """
+
 @app.route('/register', methods=['POST'])
 def register():
-    user_id = request.form['user_id']
-    if user_id in users:
-        return jsonify({'error': 'User already exists'}), 409
-    # Simulate key generation and storage (details depend on your actual crypto implementation)
-    users[user_id] = DoubleRatchet()  # Assuming a simple initialization for demonstration
-    return jsonify({'message': 'User registered successfully', 'user_id': user_id}), 201
+    username = request.json['username']
+    public_key = request.json['public_key']
+    private_key = request.json['private_key']
+    new_user = User(username=username, public_key=public_key, private_key=private_key)
+    db.session.add(new_user)
+    db.session.commit()
+    return jsonify({'message': 'User registered successfully'}), 201
+
+
+@app.route('/messages/<int:user_id>', methods=['GET'])
+def get_messages_for_user(user_id):
+    messages = Message.query.filter_by(recipient_id=user_id).all()
+    return jsonify({'messages': [str(message) for message in messages]})
+
+
 
 @app.route('/send_message', methods=['POST'])
 def send_message():
-    session_id = request.form['session_id']
-    message = request.form['message']
-    if session_id not in sessions:
-        return jsonify({'error': 'Session not found'}), 404
-    encrypted_message = sessions[session_id].encrypt(message)
-    # Store or send the encrypted message as required
-    return jsonify({'message': 'Message sent', 'encrypted': encrypted_message}), 200
+    sender_username = request.json['sender']
+    recipient_username = request.json['recipient']
+    message = request.json['message']
+
+    sender = User.query.filter_by(username=sender_username).first()
+    recipient = User.query.filter_by(username=recipient_username).first()
+
+    if not sender or not recipient:
+        return jsonify({'error': 'Invalid user information'}), 404
+
+    # Encrypt the message
+    encrypted_message = sender.encrypt(message)
+
+    # Create and store the message
+    new_message = Message(sender_id=sender.id, recipient_id=recipient.id, content=encrypted_message)
+    db.session.add(new_message)
+    db.session.commit()
+
+    return jsonify({'message': 'Message sent successfully'}), 200
+
+
+@app.route('/get_messages', methods=['POST'])
+def get_messages_by_username():
+    username = request.json['username']
+    user = User.query.filter_by(username=username).first()
+
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    messages = Message.query.filter_by(recipient_id=user.id).all()
+    return jsonify({'messages': [message.content for message in messages]})
+
 
 @app.route('/receive_message', methods=['POST'])
 def receive_message():
-    session_id = request.form['session_id']
-    encrypted_message = request.form['encrypted_message']
-    if session_id not in sessions:
-        return jsonify({'error': 'Session not found'}), 404
-    decrypted_message = sessions[session_id].decrypt(encrypted_message)
-    return jsonify({'message': 'Message received', 'decrypted': decrypted_message}), 200
+    session_id = request.json['session_id']
+    encrypted_message = request.json['encrypted_message']
+
+    # Decryption process (this is illustrative; you'd have more context in real use)
+    decrypted_message = dr.decrypt(encrypted_message)
+    return jsonify({'decrypted_message': decrypted_message}), 200
+
+def generate_key_pair():
+    private_key = x25519.X25519PrivateKey.generate()
+    public_key = private_key.public_key()
+    private_bytes = private_key.private_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PrivateFormat.Raw,
+        encryption_algorithm=serialization.NoEncryption())
+    public_bytes = public_key.public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw)
+    return base64.b64encode(private_bytes).decode('utf-8'), base64.b64encode(public_bytes).decode('utf-8')
 
 if __name__ == '__main__':
     app.run(debug=True)
+
+
